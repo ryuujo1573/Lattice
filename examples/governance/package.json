@@ -1,0 +1,7 @@
+{
+  "name": "experience-governance-example",
+  "private": true,
+  "config": {
+    "adapter": "byted-infra"
+  }
+}

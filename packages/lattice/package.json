@@ -1,0 +1,8 @@
+{
+  "name": "@cnmjs/lattice",
+  "version": "2026.3.0",
+  "license": "BSD-3-Clause",
+  "exports": {
+    "./vite": "./dist/vite-plugin.js"
+  }
+}

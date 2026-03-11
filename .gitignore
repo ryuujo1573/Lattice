@@ -1,0 +1,28 @@
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+.vscode
+!/.vscode/extensions.json
+
+dist
+.wrangler
+.output
+.vercel
+
+/.dbg
+.netlify
+.vinxi
+app.config.timestamp_*.js
+
+# Environment
+.env
+.env*.local
+
+# System Files
+.DS_Store
+Thumbs.db
