@@ -8,3 +8,4 @@ Prefer short, task-oriented references over long manuals.
 - [Linting and formatting: Biome](./biome.md)
 - [Styling: Tailwind CSS](./tailwindcss.md)
 - [UI Components: FlyonUI](./flyonui.md)
+- [Docker Compose Best Practices](./compose.md)
