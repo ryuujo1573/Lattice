@@ -38,8 +38,8 @@ Effect.fail(error)                        // wrap an error
 Effect.sync(() => sideEffect())           // wrap a synchronous side effect
 Effect.tryPromise({ try, catch })         // wrap a promise with error mapping
 
-pipe(eff, Effect.map(f))                  // transform success value
-pipe(eff, Effect.flatMap(f))              // chain effects (f returns an Effect)
+pipe(eff, Effect.map(f))                  // transform success value (f: A => B)
+pipe(eff, Effect.flatMap(f))              // chain effects (f: A => Effect<B, E2, R2>)
 pipe(eff, Effect.mapError(f))             // transform error value
 pipe(eff, Effect.catchTag("Tag", f))      // recover from a specific tagged error
 
@@ -146,6 +146,51 @@ class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly field: string
   readonly message: string
 }> {}
+```
+
+### `Data.TaggedClass` and `Data.TaggedEnum`
+
+Preferred over hand-written discriminated union interfaces. Both inject `_tag`, provide typed constructors, and add structural equality via `Data.equals`.
+
+**`Data.TaggedClass`** — for individual state or event types that are combined into a union:
+
+```typescript
+import { Data } from "effect"
+
+class DraftOrder extends Data.TaggedClass("DraftOrder")<{
+  readonly id: string
+  readonly lines: readonly string[]
+}> {}
+
+class PlacedOrder extends Data.TaggedClass("PlacedOrder")<{
+  readonly id: string
+  readonly lines: readonly string[]
+  readonly placedAt: Date
+}> {}
+
+type Order = DraftOrder | PlacedOrder
+
+// Typed constructors — no manual { _tag: "..." } literals
+const draft = new DraftOrder({ id: "1", lines: ["item-a"] })
+```
+
+**`Data.TaggedEnum`** — for declaring all union variants in one declaration (ideal for domain events):
+
+```typescript
+import { Data } from "effect"
+
+type OrderEvent = Data.TaggedEnum<{
+  OrderPlaced:    { readonly orderId: string; readonly at: Date }
+  OrderCancelled: { readonly orderId: string; readonly reason: string }
+}>
+
+const { OrderPlaced, OrderCancelled } = Data.taggedEnum<OrderEvent>()
+
+// Constructors
+const ev = OrderPlaced({ orderId: "1", at: new Date() })
+
+// Built-in type-guard helper per variant
+if (OrderPlaced.$is(ev)) { /* ev is narrowed to OrderPlaced */ }
 ```
 
 ---

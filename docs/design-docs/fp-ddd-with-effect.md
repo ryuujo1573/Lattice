@@ -21,9 +21,10 @@ function processOrder(order: { id: string; status: string }) {
   // ...
 }
 
-// Good: model each state as its own type; transitions enforce the rules
-interface DraftOrder  { readonly _tag: "DraftOrder";  readonly id: OrderId; readonly lines: readonly OrderLine[] }
-interface PlacedOrder { readonly _tag: "PlacedOrder"; readonly id: OrderId; readonly lines: readonly OrderLine[]; readonly placedAt: Date }
+// Good: model each state as its own class; transitions enforce the rules
+// (See Section B for the full Data.TaggedClass pattern)
+class DraftOrder extends Data.TaggedClass("DraftOrder")<{ id: OrderId; lines: readonly OrderLine[] }> {}
+class PlacedOrder extends Data.TaggedClass("PlacedOrder")<{ id: OrderId; lines: readonly OrderLine[]; placedAt: Date }> {}
 
 type Order = DraftOrder | PlacedOrder
 
@@ -31,7 +32,7 @@ type Order = DraftOrder | PlacedOrder
 const placeOrder = (draft: DraftOrder): Effect.Effect<PlacedOrder, EmptyOrderError> =>
   draft.lines.length === 0
     ? Effect.fail(new EmptyOrderError({ orderId: draft.id }))
-    : Effect.succeed({ _tag: "PlacedOrder", id: draft.id, lines: draft.lines, placedAt: new Date() })
+    : Effect.succeed(new PlacedOrder({ id: draft.id, lines: draft.lines, placedAt: new Date() }))
 
 // Now processOrder can only receive a PlacedOrder — no runtime check needed
 function processOrder(order: PlacedOrder) { /* ... */ }
@@ -138,63 +139,80 @@ const OrderIdSchema = Schema.String.pipe(Schema.brand("OrderId"))
 - `Brand.refined` = one predicate call at construction time, then zero cost.
 - Schema brand validates exactly once at the boundary, never again inside the domain.
 
-### B. Entities & Aggregates (Discriminated Unions + State Machines)
+### B. Entities & Aggregates (Data.TaggedClass + State Machines)
 
 Model entity lifecycle as a discriminated union. Different states carry different data. Transition functions consume one state and produce another.
 
-```typescript
-import { Effect, Data } from "effect"
+Use **`Data.TaggedClass`** instead of plain `interface`s — it injects the `_tag` discriminator, provides a typed constructor, and adds structural equality automatically.
 
-interface DraftOrder {
-  readonly _tag: "DraftOrder"
+```typescript
+import { Data, Effect } from "effect"
+
+// Each lifecycle state is its own class — only carries the data valid for that state
+class DraftOrder extends Data.TaggedClass("DraftOrder")<{
   readonly id: OrderId
   readonly lines: readonly OrderLine[]
-}
+}> {}
 
-interface PlacedOrder {
-  readonly _tag: "PlacedOrder"
+class PlacedOrder extends Data.TaggedClass("PlacedOrder")<{
   readonly id: OrderId
   readonly lines: readonly OrderLine[]
   readonly placedAt: Date
-}
+}> {}
 
 type Order = DraftOrder | PlacedOrder
 
-// Transition: consumes DraftOrder, produces PlacedOrder or an error
+// Transition: consumes DraftOrder, produces PlacedOrder or a domain error
 const placeOrder = (
   order: DraftOrder,
-): Effect.Effect<PlacedOrder, EmptyOrderError> => {
-  if (order.lines.length === 0) {
-    return Effect.fail(new EmptyOrderError({ orderId: order.id }))
-  }
-  return Effect.succeed({
-    _tag: "PlacedOrder",
-    id: order.id,
-    lines: order.lines,
-    placedAt: new Date(),
-  })
-}
+): Effect.Effect<PlacedOrder, EmptyOrderError> =>
+  order.lines.length === 0
+    ? Effect.fail(new EmptyOrderError({ orderId: order.id }))
+    : Effect.succeed(
+        new PlacedOrder({ id: order.id, lines: order.lines, placedAt: new Date() }),
+      )
 ```
 
-The `_tag` field drives exhaustive `switch` / pattern matching and costs ~8 bytes per object (an interned string pointer — actually improves V8 hidden-class stability).
+**Why `Data.TaggedClass` over manual interfaces:**
+- The `_tag` is injected automatically — no chance of typos or mismatches.
+- The constructor `new PlacedOrder({ ... })` is typed; missing or extra fields are compile errors.
+- Structural equality is built in (`Data.equals`), making test assertions and Effect internals work correctly.
+- No boilerplate `readonly _tag: "..."` on every interface.
 
-### C. Domain Events (Discriminated Unions)
+### C. Domain Events (Data.TaggedEnum)
+
+Use **`Data.TaggedEnum`** to declare all event variants in one place. It generates typed constructors, a `$is` type-guard helper per variant, and structural equality.
 
 ```typescript
-type OrderEvent =
-  | { readonly _tag: "OrderPlaced"; readonly orderId: OrderId; readonly at: Date }
-  | { readonly _tag: "OrderShipped"; readonly orderId: OrderId; readonly tracking: TrackingNumber }
-  | { readonly _tag: "OrderCancelled"; readonly orderId: OrderId; readonly reason: string }
+import { Data } from "effect"
 
-// Exhaustive handling — compiler catches missing cases
+// Declare all variants in a single type alias
+type OrderEvent = Data.TaggedEnum<{
+  OrderPlaced:   { readonly orderId: OrderId; readonly at: Date }
+  OrderShipped:  { readonly orderId: OrderId; readonly tracking: TrackingNumber }
+  OrderCancelled: { readonly orderId: OrderId; readonly reason: string }
+}>
+
+// Destructure typed constructors from taggedEnum()
+const { OrderPlaced, OrderShipped, OrderCancelled } = Data.taggedEnum<OrderEvent>()
+
+// Create events — constructor arguments are fully typed
+const event = OrderPlaced({ orderId: id, at: new Date() })
+
+// Exhaustive switch — compiler catches missing cases
 function projectEvent(state: OrderReadModel, event: OrderEvent): OrderReadModel {
   switch (event._tag) {
-    case "OrderPlaced":   return { ...state, status: "placed", placedAt: event.at }
-    case "OrderShipped":  return { ...state, status: "shipped", tracking: event.tracking }
+    case "OrderPlaced":    return { ...state, status: "placed",    placedAt: event.at }
+    case "OrderShipped":   return { ...state, status: "shipped",   tracking: event.tracking }
     case "OrderCancelled": return { ...state, status: "cancelled", reason: event.reason }
   }
 }
 ```
+
+**Why `Data.TaggedEnum` over a manual union type:**
+- All variants and their constructors are defined in one declaration — easier to extend and refactor.
+- `$is` helpers (e.g., `OrderPlaced.$is(event)`) give narrowing type guards without writing them by hand.
+- Structural equality is built in across all variants.
 
 ### D. Domain Errors (Tagged Errors)
 
@@ -224,6 +242,8 @@ Domain services are pure functions or modules of functions — not classes with 
 // domain/services.ts
 
 // Pure function: no IO, no dependencies
+const discountRates: Record<string, number> = { SUMMER10: 0.10, VIP20: 0.20 }
+
 export function applyDiscount(
   order: PricedOrder,
   code: DiscountCode,
@@ -396,6 +416,8 @@ const processItems = (items: readonly Item[]) =>
 | Using `any` / `unknown` to bypass branded types | Use `Schema.decode` at the boundary once |
 | Mixing domain types with external DTOs | Map at the infrastructure/interface boundary via `Schema` |
 | God-workflows that do everything in one pipeline | Split into focused domain services + orchestrating workflow |
+| Hand-writing `interface Foo { readonly _tag: "Foo" }` unions | Use `Data.TaggedClass` (per-state) or `Data.TaggedEnum` (whole union) |
+| Object-literal construction `{ _tag: "Foo", ... }` | Use the typed constructor `new FooState({ ... })` or `Foo({ ... })` |
 
 ---
 
