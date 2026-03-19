@@ -15,19 +15,26 @@ Related: [Core Beliefs](./core-beliefs.md) · [DDD Blueprint](../architecture/do
 Use TypeScript's type system — discriminated unions and branded types — to encode domain constraints at compile time rather than runtime checks.
 
 ```typescript
-// Bad: validation scattered everywhere
+// Bad: status is a raw string, so every consumer must re-check it
 function processOrder(order: { id: string; status: string }) {
   if (order.status !== "placed") throw new Error("Wrong status")
   // ...
 }
 
-// Good: impossible to construct an invalid state
-interface PlacedOrder {
-  readonly _tag: "PlacedOrder"
-  readonly id: OrderId
-  readonly placedAt: Date
-}
-// There is no way to produce a PlacedOrder without going through placeOrder()
+// Good: model each state as its own type; transitions enforce the rules
+interface DraftOrder  { readonly _tag: "DraftOrder";  readonly id: OrderId; readonly lines: readonly OrderLine[] }
+interface PlacedOrder { readonly _tag: "PlacedOrder"; readonly id: OrderId; readonly lines: readonly OrderLine[]; readonly placedAt: Date }
+
+type Order = DraftOrder | PlacedOrder
+
+// Only way to get a PlacedOrder — the type system guarantees you start from DraftOrder
+const placeOrder = (draft: DraftOrder): Effect.Effect<PlacedOrder, EmptyOrderError> =>
+  draft.lines.length === 0
+    ? Effect.fail(new EmptyOrderError({ orderId: draft.id }))
+    : Effect.succeed({ _tag: "PlacedOrder", id: draft.id, lines: draft.lines, placedAt: new Date() })
+
+// Now processOrder can only receive a PlacedOrder — no runtime check needed
+function processOrder(order: PlacedOrder) { /* ... */ }
 ```
 
 ### 2. Errors as Values, Not Exceptions
