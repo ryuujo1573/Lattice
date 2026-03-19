@@ -347,22 +347,16 @@ const handleRequest = (rawBody: unknown) =>
 
 ---
 
-## Mapping to Lattice Architecture
-
-### Package → Layer Mapping
-
-| Package | DDD Role |
-|---|---|
-| `packages/lattice/` | Lattice Core — domain + application |
-| `packages/robot/` | Robot — orchestration, application workflows |
-| `packages/adapters/*` | Adapters — infrastructure implementations |
+## Mapping to Your Project
 
 ### Target Directory Structure
 
+Within any package following this model, keep the four layers separate:
+
 ```
-packages/lattice/src/
+<your-package>/src/
   domain/
-    types.ts          # Branded types, discriminated unions, domain events
+    types.ts          # Branded types, Data.TaggedClass states, Data.TaggedEnum events
     errors.ts         # Data.TaggedError definitions
     services.ts       # Pure domain functions
   application/
@@ -372,7 +366,7 @@ packages/lattice/src/
     adapters.ts       # Layer implementations of ports
     schemas.ts        # Schema decode/encode for external data
   interfaces/
-    handlers.ts       # HTTP/CLI handlers — wires workflows and provides layers
+    handlers.ts       # HTTP/CLI/UI handlers — wires workflows and provides layers
 ```
 
 ### Dependency Flow
