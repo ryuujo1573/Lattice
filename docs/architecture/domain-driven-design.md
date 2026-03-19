@@ -116,6 +116,10 @@ tests/
 
 As code appears, document concrete module boundaries under `docs/architecture/` and enforce them mechanically.
 
+## Implementation Guide
+
+For concrete TypeScript implementation patterns using the Effect library, see [FP-DDD with Effect](../design-docs/fp-ddd-with-effect.md).
+
 ## Evolution Rules
 
 - When a new domain term is introduced, add it to Ubiquitous Language and use it consistently.
