@@ -15,13 +15,13 @@ Related: [Core Beliefs](./core-beliefs.md) · [DDD Blueprint](../architecture/do
 Use TypeScript's type system — discriminated unions and branded types — to encode domain constraints at compile time rather than runtime checks.
 
 ```typescript
-// Each lifecycle state is its own class — only a PlacedOrder can reach processOrder
+// Each state class carries only its relevant fields — the type signature enforces transitions
 class DraftOrder extends Data.TaggedClass("DraftOrder")<{ id: OrderId; lines: readonly OrderLine[] }> {}
 class PlacedOrder extends Data.TaggedClass("PlacedOrder")<{ id: OrderId; lines: readonly OrderLine[]; placedAt: Date }> {}
 
 type Order = DraftOrder | PlacedOrder
 
-// Transition function enforces the rule at compile time
+// Transition: DraftOrder → PlacedOrder, enforced at the call site
 const placeOrder = (draft: DraftOrder): Effect.Effect<PlacedOrder, EmptyOrderError> =>
   draft.lines.length === 0
     ? Effect.fail(new EmptyOrderError({ orderId: draft.id }))
@@ -126,7 +126,7 @@ const OrderIdSchema = Schema.String.pipe(Schema.brand("OrderId"))
 
 ### B. Entities & Aggregates (Data.TaggedClass + State Machines)
 
-Model each lifecycle state as a `Data.TaggedClass` subclass — it carries only its valid data, and transition functions consume one state and return another.
+Model each lifecycle state as a `Data.TaggedClass` subclass. Each state carries only the fields valid for that stage — `DraftOrder` has no `placedAt`, `PlacedOrder` always does — and transition functions move explicitly from one state to another.
 
 ```typescript
 import { Data, Effect } from "effect"
