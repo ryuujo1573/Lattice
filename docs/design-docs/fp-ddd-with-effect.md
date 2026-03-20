@@ -15,26 +15,18 @@ Related: [Core Beliefs](./core-beliefs.md) · [DDD Blueprint](../architecture/do
 Use TypeScript's type system — discriminated unions and branded types — to encode domain constraints at compile time rather than runtime checks.
 
 ```typescript
-// Bad: status is a raw string, so every consumer must re-check it
-function processOrder(order: { id: string; status: string }) {
-  if (order.status !== "placed") throw new Error("Wrong status")
-  // ...
-}
-
-// Good: model each state as its own class; transitions enforce the rules
-// (See Section B for the full Data.TaggedClass pattern)
+// Each lifecycle state is its own class — only a PlacedOrder can reach processOrder
 class DraftOrder extends Data.TaggedClass("DraftOrder")<{ id: OrderId; lines: readonly OrderLine[] }> {}
 class PlacedOrder extends Data.TaggedClass("PlacedOrder")<{ id: OrderId; lines: readonly OrderLine[]; placedAt: Date }> {}
 
 type Order = DraftOrder | PlacedOrder
 
-// Only way to get a PlacedOrder — the type system guarantees you start from DraftOrder
+// Transition function enforces the rule at compile time
 const placeOrder = (draft: DraftOrder): Effect.Effect<PlacedOrder, EmptyOrderError> =>
   draft.lines.length === 0
     ? Effect.fail(new EmptyOrderError({ orderId: draft.id }))
     : Effect.succeed(new PlacedOrder({ id: draft.id, lines: draft.lines, placedAt: new Date() }))
 
-// Now processOrder can only receive a PlacedOrder — no runtime check needed
 function processOrder(order: PlacedOrder) { /* ... */ }
 ```
 
@@ -43,14 +35,7 @@ function processOrder(order: PlacedOrder) { /* ... */ }
 Use `Effect` / `Either` for expected domain errors. Reserve exceptions for programmer bugs.
 
 ```typescript
-// Bad: exception for a recoverable domain case
-function getUser(id: string): User {
-  const user = db.find(id)
-  if (!user) throw new Error("User not found")
-  return user
-}
-
-// Good: error is part of the return type
+// Error is part of the return type — callers handle it explicitly
 const getUser = (id: UserId): Effect.Effect<User, UserNotFound> =>
   Effect.tryPromise({
     try: () => db.find(id),
@@ -141,9 +126,7 @@ const OrderIdSchema = Schema.String.pipe(Schema.brand("OrderId"))
 
 ### B. Entities & Aggregates (Data.TaggedClass + State Machines)
 
-Model entity lifecycle as a discriminated union. Different states carry different data. Transition functions consume one state and produce another.
-
-Use **`Data.TaggedClass`** instead of plain `interface`s — it injects the `_tag` discriminator, provides a typed constructor, and adds structural equality automatically.
+Model each lifecycle state as a `Data.TaggedClass` subclass — it carries only its valid data, and transition functions consume one state and return another.
 
 ```typescript
 import { Data, Effect } from "effect"
@@ -173,15 +156,9 @@ const placeOrder = (
       )
 ```
 
-**Why `Data.TaggedClass` over manual interfaces:**
-- The `_tag` is injected automatically — no chance of typos or mismatches.
-- The constructor `new PlacedOrder({ ... })` is typed; missing or extra fields are compile errors.
-- Structural equality is built in (`Data.equals`), making test assertions and Effect internals work correctly.
-- No boilerplate `readonly _tag: "..."` on every interface.
-
 ### C. Domain Events (Data.TaggedEnum)
 
-Use **`Data.TaggedEnum`** to declare all event variants in one place. It generates typed constructors, a `$is` type-guard helper per variant, and structural equality.
+Use **`Data.TaggedEnum`** to declare all event variants in one place — typed constructors, `$is` narrowing guards, and structural equality are generated automatically.
 
 ```typescript
 import { Data } from "effect"
@@ -208,11 +185,6 @@ function projectEvent(state: OrderReadModel, event: OrderEvent): OrderReadModel 
   }
 }
 ```
-
-**Why `Data.TaggedEnum` over a manual union type:**
-- All variants and their constructors are defined in one declaration — easier to extend and refactor.
-- `$is` helpers (e.g., `OrderPlaced.$is(event)`) give narrowing type guards without writing them by hand.
-- Structural equality is built in across all variants.
 
 ### D. Domain Errors (Tagged Errors)
 
@@ -400,18 +372,18 @@ const processItems = (items: readonly Item[]) =>
 
 ---
 
-## Anti-Patterns
+## Quick Reference
 
-| ❌ Avoid | ✅ Instead |
+| Situation | Pattern |
 |---|---|
-| Using `Effect` inside tight computational loops | Use `Effect.sync(() => plainLoop())` |
-| Throwing exceptions for expected domain errors | Return `Effect.fail(new DomainError(...))` |
-| Domain logic in infrastructure or interface layers | Keep domain pure; push IO to infrastructure |
-| Using `any` / `unknown` to bypass branded types | Use `Schema.decode` at the boundary once |
-| Mixing domain types with external DTOs | Map at the infrastructure/interface boundary via `Schema` |
-| God-workflows that do everything in one pipeline | Split into focused domain services + orchestrating workflow |
-| Hand-writing `interface Foo { readonly _tag: "Foo" }` unions | Use `Data.TaggedClass` (per-state) or `Data.TaggedEnum` (whole union) |
-| Object-literal construction `{ _tag: "Foo", ... }` | Use the typed constructor `new FooState({ ... })` or `Foo({ ... })` |
+| Computation-heavy inner loop | `Effect.sync(() => items.map(transform))` |
+| Expected domain error | `Effect.fail(new MyError({ ... }))` |
+| External data entry point | `Schema.decodeUnknown(MySchema)(rawInput)` |
+| Entity lifecycle states | `Data.TaggedClass` per state, union for the aggregate |
+| Domain events / commands | `Data.TaggedEnum` + `Data.taggedEnum()` destructuring |
+| Port declaration | `class MyRepo extends Context.Tag("MyRepo")<...>() {}` |
+| Adapter / implementation | `Layer.succeed(MyRepo, { ... })` |
+| IO-heavy computation | Wrap once at the boundary; keep domain functions pure |
 
 ---
 
