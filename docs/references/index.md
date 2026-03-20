@@ -9,4 +9,4 @@ Prefer short, task-oriented references over long manuals.
 - [Styling: Tailwind CSS](./tailwindcss.md)
 - [UI Components: FlyonUI](./flyonui.md)
 - [Docker Compose Best Practices](./compose.md)
-- [Effect (typed effect system for TypeScript)](./effect.md)
+- [Effect (Domain-Driven Design scaffold in Functional Programming for TypeScript)](./effect.md)
